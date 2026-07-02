@@ -2,20 +2,20 @@ import React, { useState, useRef, useEffect } from 'react';
 import { X, Trash2, Plus, Minus, Send, MapPin, Navigation } from 'lucide-react';
 import configData from '../utils/config.json';
 
-export default function CartDrawer({ 
-  isOpen, 
-  onClose, 
-  cartItems, 
-  onUpdateQuantity, 
-  onRemoveItem, 
+export default function CartDrawer({
+  isOpen,
+  onClose,
+  cartItems,
+  onUpdateQuantity,
+  onRemoveItem,
   onClearCart,
-  ownerWhatsapp 
+  ownerWhatsapp
 }) {
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [instructions, setInstructions] = useState('');
-  
+
   // New States for Branch & Delivery
   const [selectedBranchId, setSelectedBranchId] = useState(configData.branches[0].branchId);
   const [orderType, setOrderType] = useState('pickup');
@@ -44,21 +44,17 @@ export default function CartDrawer({
     }
   }, [isOpen]);
 
-  // Reset delivery fee if pickup
-  useEffect(() => {
-    if (orderType === 'pickup') {
-      setDynamicDeliveryFee(0);
-    }
-  }, [orderType]);
+  // The dynamic fee is managed by the useEffect below
 
-  if (!isOpen) return null;
+
+  // Early return moved to below hooks
 
   // Calculation
   const subtotal = cartItems.reduce((acc, item) => acc + (item.variant.price * item.quantity), 0);
   const deliveryFee = orderType === 'delivery' ? dynamicDeliveryFee : 0.00;
   const grandTotal = subtotal + deliveryFee;
 
-  // Handle Location Sharing & Distance Calculation
+  // Handle Location Sharing
   const handleShareLocation = () => {
     if (!navigator.geolocation) {
       alert("Geolocation is not supported by your browser.");
@@ -67,44 +63,9 @@ export default function CartDrawer({
     
     setLocationStatus('loading');
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
         setUserLocation({ lat: latitude, lng: longitude });
-        
-        // Find selected branch coordinates
-        const branch = configData.branches.find(b => b.branchId === selectedBranchId);
-        if (!branch) return;
-        
-        try {
-          // Use OSRM for driving distance
-          const url = `https://router.project-osrm.org/route/v1/driving/${longitude},${latitude};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
-          const response = await fetch(url);
-          const data = await response.json();
-          
-          if (data.routes && data.routes.length > 0) {
-            const distanceMeters = data.routes[0].distance;
-            const distanceKm = distanceMeters / 1000;
-            const pricePerKm = configData.appConfig.delivery.pricePerKm;
-            setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
-            setLocationStatus('success');
-          } else {
-            throw new Error("No route found");
-          }
-        } catch (error) {
-          console.error("Routing error:", error);
-          // Fallback to straight line (Haversine) * 1.3 (approx driving detour factor)
-          const R = 6371; // km
-          const dLat = (branch.coordinates.lat - latitude) * Math.PI / 180;
-          const dLon = (branch.coordinates.lng - longitude) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(latitude * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const distanceKm = R * c * 1.3;
-          const pricePerKm = configData.appConfig.delivery.pricePerKm;
-          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
-          setLocationStatus('success');
-        }
       },
       (error) => {
         console.error(error);
@@ -113,6 +74,52 @@ export default function CartDrawer({
       }
     );
   };
+
+  // Auto-calculate distance and fee whenever branch, location, or order type changes
+  useEffect(() => {
+    const calculateFee = async () => {
+      if (orderType !== 'delivery' || !userLocation) {
+        setDynamicDeliveryFee(0);
+        return;
+      }
+
+      setLocationStatus('loading');
+      const branch = configData.branches.find(b => b.branchId === selectedBranchId);
+      if (!branch) return;
+      
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.routes && data.routes.length > 0) {
+          const distanceMeters = data.routes[0].distance;
+          const distanceKm = distanceMeters / 1000;
+          const pricePerKm = configData.appConfig.delivery.pricePerKm;
+          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+          setLocationStatus('success');
+          return; // Exit early if API succeeds
+        }
+      } catch (error) {
+        console.error("Routing error:", error);
+      }
+      
+      // Fallback to straight line (Haversine) without extra multiplier
+      const R = 6371; // km
+      const dLat = (branch.coordinates.lat - userLocation.lat) * Math.PI / 180;
+      const dLon = (branch.coordinates.lng - userLocation.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(userLocation.lat * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distanceKm = R * c; // Removed the * 1.3 penalty
+      const pricePerKm = configData.appConfig.delivery.pricePerKm;
+      setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+      setLocationStatus('success');
+    };
+
+    calculateFee();
+  }, [userLocation, selectedBranchId, orderType]);
 
 
 
@@ -125,13 +132,19 @@ export default function CartDrawer({
       return;
     }
 
-    if (orderType === 'delivery' && !customerAddress && !userLocation) {
-      alert('For delivery, please provide an address or share your location.');
-      return;
+    if (orderType === 'delivery') {
+      if (!userLocation) {
+        alert("Live location is required for Delivery to calculate distance. Please tap 'Share Current Location'.");
+        return;
+      }
+      if (!customerAddress) {
+        alert("Please provide your full delivery address.");
+        return;
+      }
     }
 
     const branch = configData.branches.find(b => b.branchId === selectedBranchId);
-    
+
     // Build curated WhatsApp message
     let message = `🟢 *PHARMADIRECT - NEW ORDER*\n`;
     message += `----------------------------------------\n`;
@@ -141,7 +154,7 @@ export default function CartDrawer({
     message += `👤 *Customer Information:*\n`;
     message += `*Name:* ${customerName}\n`;
     message += `*Phone:* ${customerPhone}\n`;
-    
+
     if (orderType === 'delivery') {
       if (customerAddress) message += `*Address:* ${customerAddress}\n`;
       if (userLocation) {
@@ -151,7 +164,7 @@ export default function CartDrawer({
     if (instructions) {
       message += `*Instructions:* ${instructions}\n`;
     }
-    
+
     message += `\n📦 *Order Details:*\n`;
     cartItems.forEach((item, index) => {
       const itemSubtotal = item.variant.price * item.quantity;
@@ -172,7 +185,7 @@ export default function CartDrawer({
 
     // Encode message for URL
     const encodedMessage = encodeURIComponent(message);
-    
+
     // Clean target WhatsApp phone number
     const cleanPhone = ownerWhatsapp.replace(/\+/g, '');
     const whatsappUrl = `https://wa.me/${cleanPhone}?text=${encodedMessage}`;
@@ -183,17 +196,19 @@ export default function CartDrawer({
     onClose();
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end">
       {/* Backdrop overlay */}
-      <div 
-        onClick={onClose} 
+      <div
+        onClick={onClose}
         className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm animate-fade-in"
       />
 
       {/* Cart Slider Panel */}
       <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col z-10 animate-slide-in border-l border-slate-100">
-        
+
         {/* Drawer Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2">
@@ -202,7 +217,7 @@ export default function CartDrawer({
               {cartItems.length}
             </span>
           </div>
-          
+
           <button
             onClick={onClose}
             className="p-1 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-full transition-all"
@@ -212,7 +227,7 @@ export default function CartDrawer({
         </div>
 
         {/* Scrollable Container */}
-        <div 
+        <div
           ref={scrollContainerRef}
           className="flex-1 overflow-y-auto p-4 space-y-6 scrollbar-thin"
         >
@@ -241,9 +256,6 @@ export default function CartDrawer({
                     value={selectedBranchId}
                     onChange={(e) => {
                       setSelectedBranchId(e.target.value);
-                      setLocationStatus('idle');
-                      setDynamicDeliveryFee(0);
-                      setUserLocation(null);
                     }}
                     className="w-full text-sm font-bold px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 transition-all shadow-sm"
                   >
@@ -279,8 +291,8 @@ export default function CartDrawer({
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Items Selected</h4>
-                  <button 
-                    onClick={onClearCart} 
+                  <button
+                    onClick={onClearCart}
                     className="text-xs text-rose-600 hover:underline font-bold"
                   >
                     Clear All
@@ -289,7 +301,7 @@ export default function CartDrawer({
 
                 <div className="space-y-2.5">
                   {cartItems.map((item) => (
-                    <div 
+                    <div
                       key={`${item.medicineId}-${item.variant.sku}`}
                       className="flex gap-3 p-3 bg-slate-50 border border-slate-200/50 rounded-xl animate-scale-up"
                     >
@@ -386,16 +398,15 @@ export default function CartDrawer({
                           type="button"
                           onClick={handleShareLocation}
                           disabled={locationStatus === 'loading'}
-                          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${
-                            locationStatus === 'success' 
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${locationStatus === 'success'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
-                          }`}
+                            }`}
                         >
                           <Navigation size={14} />
-                          {locationStatus === 'loading' ? 'Calculating...' : 
-                           locationStatus === 'success' ? 'Location Shared (Fee Calculated)' : 
-                           'Share Current Location'}
+                          {locationStatus === 'loading' ? 'Calculating...' :
+                            locationStatus === 'success' ? 'Location Shared (Fee Calculated)' :
+                              'Share Current Location'}
                         </button>
                       </div>
 

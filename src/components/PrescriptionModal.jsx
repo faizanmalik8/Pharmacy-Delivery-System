@@ -11,29 +11,25 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
   const [customerAddress, setCustomerAddress] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
-  
+
   // New States for Branch & Delivery
   const [selectedBranchId, setSelectedBranchId] = useState(configData.branches[0].branchId);
   const [orderType, setOrderType] = useState('pickup');
   const [locationStatus, setLocationStatus] = useState('idle'); // idle, loading, success, error
   const [userLocation, setUserLocation] = useState(null);
   const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState(0);
-  
+
   const fileInputRef = useRef(null);
 
-  // Reset delivery fee if pickup
-  useEffect(() => {
-    if (orderType === 'pickup') {
-      setDynamicDeliveryFee(0);
-    }
-  }, [orderType]);
+  // The dynamic fee is managed by the useEffect below
+
 
   const generateSignature = (timestamp, apiSecret) => {
     const str = `timestamp=${timestamp}${apiSecret}`;
     return CryptoJS.SHA1(str).toString();
   };
 
-  if (!isOpen) return null;
+  // Early return moved to below hooks
 
   const handleImageCapture = (e) => {
     const file = e.target.files[0];
@@ -51,44 +47,12 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
       alert("Geolocation is not supported by your browser.");
       return;
     }
-    
+
     setLocationStatus('loading');
     navigator.geolocation.getCurrentPosition(
-      async (position) => {
+      (position) => {
         const { latitude, longitude } = position.coords;
         setUserLocation({ lat: latitude, lng: longitude });
-        
-        const branch = configData.branches.find(b => b.branchId === selectedBranchId);
-        if (!branch) return;
-        
-        try {
-          const url = `https://router.project-osrm.org/route/v1/driving/${longitude},${latitude};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
-          const response = await fetch(url);
-          const data = await response.json();
-          
-          if (data.routes && data.routes.length > 0) {
-            const distanceMeters = data.routes[0].distance;
-            const distanceKm = distanceMeters / 1000;
-            const pricePerKm = configData.appConfig.delivery.pricePerKm;
-            setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
-            setLocationStatus('success');
-          } else {
-            throw new Error("No route found");
-          }
-        } catch (error) {
-          console.error("Routing error:", error);
-          const R = 6371; // km
-          const dLat = (branch.coordinates.lat - latitude) * Math.PI / 180;
-          const dLon = (branch.coordinates.lng - longitude) * Math.PI / 180;
-          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                    Math.cos(latitude * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
-                    Math.sin(dLon/2) * Math.sin(dLon/2);
-          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-          const distanceKm = R * c * 1.3;
-          const pricePerKm = configData.appConfig.delivery.pricePerKm;
-          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
-          setLocationStatus('success');
-        }
       },
       (error) => {
         console.error(error);
@@ -98,22 +62,74 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
     );
   };
 
+  // Auto-calculate distance and fee whenever branch, location, or order type changes
+  useEffect(() => {
+    const calculateFee = async () => {
+      if (orderType !== 'delivery' || !userLocation) {
+        setDynamicDeliveryFee(0);
+        return;
+      }
+
+      setLocationStatus('loading');
+      const branch = configData.branches.find(b => b.branchId === selectedBranchId);
+      if (!branch) return;
+      
+      try {
+        const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
+        const response = await fetch(url);
+        const data = await response.json();
+        
+        if (data.routes && data.routes.length > 0) {
+          const distanceMeters = data.routes[0].distance;
+          const distanceKm = distanceMeters / 1000;
+          const pricePerKm = configData.appConfig.delivery.pricePerKm;
+          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+          setLocationStatus('success');
+          return; // Exit early if API succeeds
+        }
+      } catch (error) {
+        console.error("Routing error:", error);
+      }
+      
+      // Fallback to straight line (Haversine) without extra multiplier
+      const R = 6371; // km
+      const dLat = (branch.coordinates.lat - userLocation.lat) * Math.PI / 180;
+      const dLon = (branch.coordinates.lng - userLocation.lng) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(userLocation.lat * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
+                Math.sin(dLon/2) * Math.sin(dLon/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      const distanceKm = R * c; // Removed the * 1.3 penalty
+      const pricePerKm = configData.appConfig.delivery.pricePerKm;
+      setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+      setLocationStatus('success');
+    };
+
+    calculateFee();
+  }, [userLocation, selectedBranchId, orderType]);
+
   const handleSend = async (e) => {
     e?.preventDefault();
     if (!imagePreview) {
       alert('Please upload or capture a prescription image first.');
       return;
     }
-    
-    
+
+
     if (!customerName || !customerPhone) {
       alert('Please fill out Name and Phone Number.');
       return;
     }
 
-    if (orderType === 'delivery' && !customerAddress && !userLocation) {
-      alert('For delivery, please provide an address or share your location.');
-      return;
+    if (orderType === 'delivery') {
+      if (!userLocation) {
+        alert("Live location is required for Delivery to calculate distance. Please tap 'Share Current Location'.");
+        return;
+      }
+      if (!customerAddress) {
+        alert("Please provide your full delivery address.");
+        return;
+      }
     }
 
     setIsUploading(true);
@@ -151,14 +167,14 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
       message += `👤 *Customer Information:*\n`;
       message += `*Name:* ${customerName}\n`;
       message += `*Phone:* ${customerPhone}\n`;
-      
+
       if (orderType === 'delivery') {
         if (customerAddress) message += `*Address:* ${customerAddress}\n`;
         if (userLocation) {
           message += `*Location Pin:* https://www.google.com/maps?q=${userLocation.lat},${userLocation.lng}\n`;
         }
       }
-      
+
       if (note) {
         message += `*Instructions:* ${note}\n`;
       }
@@ -184,10 +200,12 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
     }
   };
 
+  if (!isOpen) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm animate-fade-in p-4">
       <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-100 flex flex-col max-h-[90vh] animate-scale-up">
-        
+
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100 shrink-0">
           <div className="flex items-center gap-2">
@@ -218,7 +236,7 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
               <div className="relative rounded-xl overflow-hidden border border-slate-200 shadow-sm group">
                 <img src={imagePreview} alt="Prescription Preview" className="w-full h-48 object-cover" />
                 <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                  <button 
+                  <button
                     onClick={() => setImagePreview(null)}
                     className="px-4 py-2 bg-white text-rose-600 font-bold text-xs rounded-lg shadow-md"
                   >
@@ -268,9 +286,6 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
                 value={selectedBranchId}
                 onChange={(e) => {
                   setSelectedBranchId(e.target.value);
-                  setLocationStatus('idle');
-                  setDynamicDeliveryFee(0);
-                  setUserLocation(null);
                 }}
                 className="w-full text-sm font-bold px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 transition-all shadow-sm"
               >
@@ -307,7 +322,7 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
             <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100 pb-1.5">
               Delivery Details
             </h4>
-            
+
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name *</label>
               <input
@@ -342,16 +357,15 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
                     type="button"
                     onClick={handleShareLocation}
                     disabled={locationStatus === 'loading'}
-                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${
-                      locationStatus === 'success' 
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                    className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${locationStatus === 'success'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                         : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
-                    }`}
+                      }`}
                   >
                     <Navigation size={14} />
-                    {locationStatus === 'loading' ? 'Calculating...' : 
-                     locationStatus === 'success' ? 'Location Shared (Fee Calculated)' : 
-                     'Share Current Location'}
+                    {locationStatus === 'loading' ? 'Calculating...' :
+                      locationStatus === 'success' ? 'Location Shared (Fee Calculated)' :
+                        'Share Current Location'}
                   </button>
                 </div>
 
@@ -389,7 +403,7 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
               Your prescription image will be securely uploaded to our servers and the link will be attached automatically to your WhatsApp message.
             </p>
           </div>
-          
+
           {uploadError && (
             <p className="text-xs text-rose-600 font-bold text-center">{uploadError}</p>
           )}
@@ -400,11 +414,10 @@ export default function PrescriptionModal({ isOpen, onClose, ownerWhatsapp }) {
           <button
             onClick={handleSend}
             disabled={!imagePreview || isUploading}
-            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all shadow-md ${
-              !imagePreview || isUploading
+            className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all shadow-md ${!imagePreview || isUploading
                 ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
                 : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/10 hover:shadow-emerald-600/20'
-            }`}
+              }`}
           >
             {isUploading ? (
               <div className="w-5 h-5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin"></div>

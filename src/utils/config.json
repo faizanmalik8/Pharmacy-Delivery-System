@@ -18,8 +18,8 @@
             "branchName": "University-Chowk-Branch",
             "phone": "03070026748",
             "coordinates": {
-                "lat": 29.3995249,
-                "lng": 71.5931797
+                "lat": 29.3908328,
+                "lng": 71.6626532
             },
             "status": {
                 "isActive": true,
@@ -32,8 +32,8 @@
             "branchName": "Hussani Chowk Branch",
             "phone": "03277343906",
             "coordinates": {
-                "lat": 29.3908328,
-                "lng": 71.6801149
+                "lat": 29.3882098,
+                "lng": 71.6849307
             },
             "status": {
                 "isActive": true,
@@ -46,8 +46,8 @@
             "branchName": "Model Town B Branch",
             "phone": "03356604484",
             "coordinates": {
-                "lat": 29.3825992,
-                "lng": 71.7141628
+                "lat": 29.3941373,
+                "lng": 71.6536105
             },
             "status": {
                 "isActive": true,
