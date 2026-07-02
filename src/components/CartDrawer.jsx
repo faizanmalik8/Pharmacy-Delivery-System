@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Plus, Minus, Send } from 'lucide-react';
+import { X, Trash2, Plus, Minus, Send, MapPin, Navigation } from 'lucide-react';
+import configData from '../utils/config.json';
 
 export default function CartDrawer({ 
   isOpen, 
@@ -14,6 +15,14 @@ export default function CartDrawer({
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
   const [instructions, setInstructions] = useState('');
+  
+  // New States for Branch & Delivery
+  const [selectedBranchId, setSelectedBranchId] = useState(configData.branches[0].branchId);
+  const [orderType, setOrderType] = useState('pickup');
+  const [locationStatus, setLocationStatus] = useState('idle'); // idle, loading, success, error
+  const [userLocation, setUserLocation] = useState(null);
+  const [dynamicDeliveryFee, setDynamicDeliveryFee] = useState(0);
+
   const scrollContainerRef = useRef(null);
 
   // Auto-scroll to prescription section if requested
@@ -35,12 +44,75 @@ export default function CartDrawer({
     }
   }, [isOpen]);
 
+  // Reset delivery fee if pickup
+  useEffect(() => {
+    if (orderType === 'pickup') {
+      setDynamicDeliveryFee(0);
+    }
+  }, [orderType]);
+
   if (!isOpen) return null;
 
   // Calculation
   const subtotal = cartItems.reduce((acc, item) => acc + (item.variant.price * item.quantity), 0);
-  const deliveryFee = subtotal > 0 ? 200.00 : 0.00; // Flat delivery fee
+  const deliveryFee = orderType === 'delivery' ? dynamicDeliveryFee : 0.00;
   const grandTotal = subtotal + deliveryFee;
+
+  // Handle Location Sharing & Distance Calculation
+  const handleShareLocation = () => {
+    if (!navigator.geolocation) {
+      alert("Geolocation is not supported by your browser.");
+      return;
+    }
+    
+    setLocationStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        setUserLocation({ lat: latitude, lng: longitude });
+        
+        // Find selected branch coordinates
+        const branch = configData.branches.find(b => b.branchId === selectedBranchId);
+        if (!branch) return;
+        
+        try {
+          // Use OSRM for driving distance
+          const url = `https://router.project-osrm.org/route/v1/driving/${longitude},${latitude};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
+          const response = await fetch(url);
+          const data = await response.json();
+          
+          if (data.routes && data.routes.length > 0) {
+            const distanceMeters = data.routes[0].distance;
+            const distanceKm = distanceMeters / 1000;
+            const pricePerKm = configData.appConfig.delivery.pricePerKm;
+            setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+            setLocationStatus('success');
+          } else {
+            throw new Error("No route found");
+          }
+        } catch (error) {
+          console.error("Routing error:", error);
+          // Fallback to straight line (Haversine) * 1.3 (approx driving detour factor)
+          const R = 6371; // km
+          const dLat = (branch.coordinates.lat - latitude) * Math.PI / 180;
+          const dLon = (branch.coordinates.lng - longitude) * Math.PI / 180;
+          const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                    Math.cos(latitude * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
+                    Math.sin(dLon/2) * Math.sin(dLon/2);
+          const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+          const distanceKm = R * c * 1.3;
+          const pricePerKm = configData.appConfig.delivery.pricePerKm;
+          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
+          setLocationStatus('success');
+        }
+      },
+      (error) => {
+        console.error(error);
+        setLocationStatus('error');
+        alert("Unable to retrieve your location. Please check browser permissions.");
+      }
+    );
+  };
 
 
 
@@ -48,20 +120,34 @@ export default function CartDrawer({
     e.preventDefault();
     if (cartItems.length === 0) return;
 
-    if (!customerName || !customerPhone || !customerAddress) {
-      alert('Please fill out all required customer information.');
+    if (!customerName || !customerPhone) {
+      alert('Please fill out Name and Phone Number.');
       return;
     }
 
+    if (orderType === 'delivery' && !customerAddress && !userLocation) {
+      alert('For delivery, please provide an address or share your location.');
+      return;
+    }
 
-
+    const branch = configData.branches.find(b => b.branchId === selectedBranchId);
+    
     // Build curated WhatsApp message
     let message = `🟢 *PHARMADIRECT - NEW ORDER*\n`;
+    message += `----------------------------------------\n`;
+    message += `🏢 *Branch:* ${branch?.branchName}\n`;
+    message += `🚚 *Order Type:* ${orderType === 'pickup' ? 'Pick-Up (Self)' : 'Delivery'}\n`;
     message += `----------------------------------------\n`;
     message += `👤 *Customer Information:*\n`;
     message += `*Name:* ${customerName}\n`;
     message += `*Phone:* ${customerPhone}\n`;
-    message += `*Address:* ${customerAddress}\n`;
+    
+    if (orderType === 'delivery') {
+      if (customerAddress) message += `*Address:* ${customerAddress}\n`;
+      if (userLocation) {
+        message += `*Location Pin:* https://www.google.com/maps?q=${userLocation.lat},${userLocation.lng}\n`;
+      }
+    }
     if (instructions) {
       message += `*Instructions:* ${instructions}\n`;
     }
@@ -144,6 +230,51 @@ export default function CartDrawer({
             </div>
           ) : (
             <>
+              {/* Branch & Order Type Selection at Top */}
+              <div className="space-y-4 bg-slate-50 border border-slate-200 p-4 rounded-2xl mb-4">
+                {/* Branch Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-1.5 uppercase tracking-wider">
+                    Select Branch
+                  </label>
+                  <select
+                    value={selectedBranchId}
+                    onChange={(e) => {
+                      setSelectedBranchId(e.target.value);
+                      setLocationStatus('idle');
+                      setDynamicDeliveryFee(0);
+                      setUserLocation(null);
+                    }}
+                    className="w-full text-sm font-bold px-3 py-2.5 bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-800 transition-all shadow-sm"
+                  >
+                    {configData.branches.map(b => (
+                      <option key={b.branchId} value={b.branchId}>{b.branchName}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Order Type Selection */}
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 mb-2 uppercase tracking-wider">
+                    Order Type
+                  </label>
+                  <div className="flex gap-3">
+                    <label className="flex-1 cursor-pointer">
+                      <input type="radio" className="peer sr-only" name="orderType" value="pickup" checked={orderType === 'pickup'} onChange={() => setOrderType('pickup')} />
+                      <div className="px-3 py-2.5 text-center text-sm font-bold rounded-xl border-2 border-slate-200 bg-white peer-checked:bg-emerald-50 peer-checked:border-emerald-500 peer-checked:text-emerald-700 transition-all shadow-sm">
+                        Pick-Up (Free)
+                      </div>
+                    </label>
+                    <label className="flex-1 cursor-pointer">
+                      <input type="radio" className="peer sr-only" name="orderType" value="delivery" checked={orderType === 'delivery'} onChange={() => setOrderType('delivery')} />
+                      <div className="px-3 py-2.5 text-center text-sm font-bold rounded-xl border-2 border-slate-200 bg-white peer-checked:bg-emerald-50 peer-checked:border-emerald-500 peer-checked:text-emerald-700 transition-all shadow-sm">
+                        Delivery
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
               {/* Cart Items List */}
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
@@ -243,19 +374,45 @@ export default function CartDrawer({
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                      Full Delivery Address *
-                    </label>
-                    <textarea
-                      required
-                      rows={2}
-                      value={customerAddress}
-                      onChange={(e) => setCustomerAddress(e.target.value)}
-                      placeholder="Street number, house/apartment, block or sector"
-                      className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 transition-all resize-none"
-                    />
-                  </div>
+
+
+                  {orderType === 'delivery' && (
+                    <div className="space-y-3 pt-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                          Share Location for Delivery Cost *
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleShareLocation}
+                          disabled={locationStatus === 'loading'}
+                          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all border ${
+                            locationStatus === 'success' 
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                              : 'bg-white text-blue-600 border-blue-200 hover:bg-blue-50'
+                          }`}
+                        >
+                          <Navigation size={14} />
+                          {locationStatus === 'loading' ? 'Calculating...' : 
+                           locationStatus === 'success' ? 'Location Shared (Fee Calculated)' : 
+                           'Share Current Location'}
+                        </button>
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-500 mb-1">
+                          Full Delivery Address (Optional if location shared)
+                        </label>
+                        <textarea
+                          rows={2}
+                          value={customerAddress}
+                          onChange={(e) => setCustomerAddress(e.target.value)}
+                          placeholder="Street number, house/apartment, block or sector"
+                          className="w-full text-xs font-semibold px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-slate-700 transition-all resize-none"
+                        />
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-[11px] font-bold text-slate-500 mb-1">

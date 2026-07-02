@@ -1,0 +1,59 @@
+{
+    "appConfig": {
+        "appName": "Hafiz + Pharmacy",
+        "currency": "PKR",
+        "delivery": {
+            "enabled": true,
+            "pricePerKm": 40
+        },
+        "orderSettings": {
+            "acceptOrders": true,
+            "allowCOD": true,
+            "allowScheduledOrders": true
+        }
+    },
+    "branches": [
+        {
+            "branchId": "HP001",
+            "branchName": "University-Chowk-Branch",
+            "phone": "03070026748",
+            "coordinates": {
+                "lat": 29.3995249,
+                "lng": 71.5931797
+            },
+            "status": {
+                "isActive": true,
+                "acceptingOrders": true,
+                "deliveryAvailable": true
+            }
+        },
+        {
+            "branchId": "HP002",
+            "branchName": "Hussani Chowk Branch",
+            "phone": "03277343906",
+            "coordinates": {
+                "lat": 29.3908328,
+                "lng": 71.6801149
+            },
+            "status": {
+                "isActive": true,
+                "acceptingOrders": true,
+                "deliveryAvailable": true
+            }
+        },
+        {
+            "branchId": "HP003",
+            "branchName": "Model Town B Branch",
+            "phone": "03356604484",
+            "coordinates": {
+                "lat": 29.3825992,
+                "lng": 71.7141628
+            },
+            "status": {
+                "isActive": true,
+                "acceptingOrders": true,
+                "deliveryAvailable": true
+            }
+        }
+    ]
+}

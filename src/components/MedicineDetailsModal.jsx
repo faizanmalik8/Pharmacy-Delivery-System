@@ -73,12 +73,7 @@ export default function MedicineDetailsModal({ isOpen, onClose, medicine, catego
                 {categoryName}
               </span>
               
-              {isPrescriptionRequired && (
-                <span className="flex items-center gap-1 px-3 py-1 bg-amber-100 text-amber-800 text-[10px] font-bold rounded-full uppercase tracking-wider">
-                  <ShieldAlert size={12} className="shrink-0" />
-                  Rx Required
-                </span>
-              )}
+
 
               <span className={`ml-auto px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
                 isAvailable ? 'bg-emerald-100/60 text-emerald-800' : 'bg-rose-100/60 text-rose-800'
@@ -110,9 +105,7 @@ export default function MedicineDetailsModal({ isOpen, onClose, medicine, catego
 
             {/* Variant Selection */}
             <div className="space-y-4">
-              <h4 className="text-xs font-bold text-slate-600 uppercase tracking-wider border-b border-slate-100 pb-2">
-                Select Strength & Packaging
-              </h4>
+
               <div className="grid gap-3">
                 {medicine.variants.map((variant, index) => {
                   const isSelected = selectedVariantIndex === index;
@@ -146,9 +139,7 @@ export default function MedicineDetailsModal({ isOpen, onClose, medicine, catego
         <div className="p-4 sm:p-5 border-t border-slate-100 bg-white shrink-0 rounded-b-3xl">
           <div className="flex items-center justify-between gap-4 max-w-md mx-auto sm:max-w-none">
             <div className="hidden sm:block min-w-[120px]">
-              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider leading-none mb-1">
-                Total Price
-              </span>
+
               <span className="text-2xl font-black font-heading text-emerald-600 leading-none">
                 Rs.{selectedVariant.price ? selectedVariant.price.toFixed(2) : '0.00'}
               </span>

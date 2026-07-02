@@ -22,13 +22,7 @@ export default function Header({
             setSelectedCategory(null);
             setSearchQuery('');
           }}>
-            <div className="relative flex items-center justify-center w-10 h-10 bg-emerald-600 rounded-xl text-white shadow-md shadow-emerald-600/20">
-              <span className="text-xl font-bold font-heading">+</span>
-              <div className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-emerald-400 border-2 border-white rounded-full active-pulse"></div>
-            </div>
-            <span className="text-xl font-extrabold font-heading text-slate-800 tracking-tight hidden sm:block">
-              Pharma<span className="text-emerald-600">Direct</span>
-            </span>
+            <img src="/logo.png" alt="Hafiz+Pharmacy" className="h-10 w-auto object-contain" />
           </div>
 
           {/* Search Bar */}
@@ -71,14 +65,7 @@ export default function Header({
               )}
             </button>
 
-            {/* Upload Button */}
-            <button
-              onClick={onUploadClick}
-              className="flex justify-center items-center gap-1.5 px-3 md:px-4 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 font-bold rounded-lg md:rounded-xl text-[10px] md:text-xs transition-all border border-amber-100/50 shadow-sm"
-            >
-              <FileUp size={12} className="text-amber-600 md:w-[14px] md:h-[14px]" />
-              <span className="hidden md:inline">Upload Rx</span>
-            </button>
+
           </div>
         </div>
 
@@ -92,7 +79,7 @@ export default function Header({
                 : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:text-slate-800'
             }`}
           >
-            All Medicines
+            All Categories
           </button>
           {categories.map((cat) => (
             <button

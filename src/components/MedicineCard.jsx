@@ -51,13 +51,7 @@ export default function MedicineCard({ medicine, categoryName, onAddToCart, cart
           {categoryName}
         </span>
         
-        {/* Prescription Required Badge */}
-        {isPrescriptionRequired && (
-          <span className="flex items-center gap-0.5 md:gap-1 px-1.5 md:px-2.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-100 text-[8px] md:text-[10px] font-bold rounded-full uppercase tracking-wider">
-            <ShieldAlert className="w-2 h-2 md:w-2.5 md:h-2.5 shrink-0" />
-            Rx Req
-          </span>
-        )}
+
 
         {/* Stock Badge */}
         <span className={`ml-auto px-1.5 md:px-2 py-0.5 rounded-full text-[8px] md:text-[10px] font-bold uppercase tracking-wider ${
@@ -100,9 +94,7 @@ export default function MedicineCard({ medicine, categoryName, onAddToCart, cart
 
       {/* Variant Selector */}
       <div className="mb-5">
-        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-          Select Strength & Pack:
-        </label>
+
         <select
           value={selectedVariantIndex}
           onChange={(e) => setSelectedVariantIndex(Number(e.target.value))}
@@ -119,9 +111,7 @@ export default function MedicineCard({ medicine, categoryName, onAddToCart, cart
       {/* Bottom Row: Price and Button */}
       <div className="flex items-center justify-between gap-1 md:gap-4 mt-auto pt-2 md:pt-3 border-t border-slate-100">
         <div className="min-w-0 flex-1">
-          <span className="block text-[8px] md:text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none truncate">
-            Price
-          </span>
+
           <span className="text-sm md:text-xl font-black font-heading text-slate-800 truncate block">
             Rs.{selectedVariant.price ? selectedVariant.price.toFixed(2) : '0.00'}
           </span>

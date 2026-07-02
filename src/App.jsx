@@ -1,16 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/Header';
-import Hero from './components/Hero';
 import PrescriptionBanner from './components/PrescriptionBanner';
 import MedicineCard from './components/MedicineCard';
 import CartDrawer from './components/CartDrawer';
 import PrescriptionModal from './components/PrescriptionModal';
 import MedicineDetailsModal from './components/MedicineDetailsModal';
-import catalogData from './data/medicines_catalog_complete.json';
-import { Pill, Activity, ShieldCheck, Heart, Sparkles, MessageCircleCode } from 'lucide-react';
+import PwaInstallButton from './components/PwaInstallButton';
+import CategoryMiniCards from './components/CategoryMiniCards';
+import { fetchCatalogFromGoogleSheets } from './utils/sheetParser';
+import { Pill, Activity, ShieldCheck, Heart, Sparkles, MessageCircleCode, Loader2 } from 'lucide-react';
 
 export default function App() {
   // Application State
+  const [catalogData, setCatalogData] = useState([]);
+  const [isLoadingCatalog, setIsLoadingCatalog] = useState(true);
+  const [catalogError, setCatalogError] = useState(null);
+
   const [cart, setCart] = useState(() => {
     const localCart = localStorage.getItem('pharmadirect_cart');
     return localCart ? JSON.parse(localCart) : [];
@@ -18,6 +23,12 @@ export default function App() {
   
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [selectedSubCategory, setSelectedSubCategory] = useState(null);
+
+  const handleCategorySelect = (catName) => {
+    setSelectedCategory(catName);
+    setSelectedSubCategory(null);
+  };
   
   const ownerWhatsapp = '+923070026748';
   
@@ -34,6 +45,23 @@ export default function App() {
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  // Fetch Catalog from Google Sheets
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        setIsLoadingCatalog(true);
+        const data = await fetchCatalogFromGoogleSheets();
+        setCatalogData(data);
+      } catch (err) {
+        console.error("Catalog load error:", err);
+        setCatalogError(err.message);
+      } finally {
+        setIsLoadingCatalog(false);
+      }
+    }
+    loadCatalog();
   }, []);
 
   const openModalWithHistory = (type, payload = null) => {
@@ -112,31 +140,52 @@ export default function App() {
   const categoriesList = catalogData.map(c => c.categoryName);
 
   const filteredCatalog = catalogData.map((category) => {
-    // If there is an active search query, ignore selectedCategory and search all
-    // If no search query, filter by selectedCategory normally
     if (!searchQuery && selectedCategory && category.categoryName !== selectedCategory) {
       return null;
     }
 
-    // Filter medicines in this category
-    const medicines = category.medicines.filter((med) => {
-      if (!searchQuery) return true;
-      
-      const query = searchQuery.toLowerCase();
-      const nameMatch = med.name.toLowerCase().includes(query);
-      const formulaMatch = med.formula.toLowerCase().includes(query);
-      const categoryMatch = category.categoryName.toLowerCase().includes(query);
-      
-      return nameMatch || formulaMatch || categoryMatch;
-    });
+    if (category.isGroup) {
+      let subs = category.subCategories;
+      if (!searchQuery && selectedSubCategory) {
+        subs = subs.filter(sub => sub.categoryName === selectedSubCategory);
+      }
 
-    if (medicines.length === 0) return null;
+      subs = subs.map(sub => {
+        const medicines = sub.medicines.filter(med => {
+          if (!searchQuery) return true;
+          const query = searchQuery.toLowerCase();
+          return med.name.toLowerCase().includes(query) || 
+                 (med.formula && med.formula.toLowerCase().includes(query)) || 
+                 sub.categoryName.toLowerCase().includes(query);
+        });
+        if (medicines.length === 0) return null;
+        return { ...sub, medicines };
+      }).filter(Boolean);
 
-    return {
-      ...category,
-      medicines
-    };
-  }).filter(Boolean); // Remove null categories
+      if (subs.length === 0) return null;
+
+      return {
+        ...category,
+        subCategories: subs
+      };
+    } else {
+      // Normal category filtering
+      const medicines = category.medicines.filter((med) => {
+        if (!searchQuery) return true;
+        const query = searchQuery.toLowerCase();
+        return med.name.toLowerCase().includes(query) || 
+               (med.formula && med.formula.toLowerCase().includes(query)) || 
+               category.categoryName.toLowerCase().includes(query);
+      });
+
+      if (medicines.length === 0) return null;
+
+      return {
+        ...category,
+        medicines
+      };
+    }
+  }).filter(Boolean);
 
   const handleUploadClick = () => {
     openModalWithHistory('prescription');
@@ -156,21 +205,11 @@ export default function App() {
         setSearchQuery={setSearchQuery}
         categories={categoriesList}
         selectedCategory={selectedCategory}
-        setSelectedCategory={setSelectedCategory}
+        setSelectedCategory={handleCategorySelect}
       />
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 overflow-x-hidden">
-        {/* Hero Section */}
-        <Hero 
-          categories={categoriesList}
-          onCategoryClick={(cat) => {
-            setSelectedCategory(cat);
-            // Scroll to catalog section
-            document.getElementById('catalog-section')?.scrollIntoView({ behavior: 'smooth' });
-          }}
-        />
-
         {/* Prescription Banner */}
         <PrescriptionBanner onUploadClick={handleUploadClick} />
 
@@ -190,12 +229,13 @@ export default function App() {
             {/* Results Count / Reset */}
             <div className="flex items-center gap-3 shrink-0">
               <span className="text-xs font-bold text-slate-500 bg-slate-100 border border-slate-200 px-3 py-1 rounded-xl">
-                {filteredCatalog.reduce((acc, c) => acc + c.medicines.length, 0)} items found
+                {isLoadingCatalog ? 'Loading...' : `${filteredCatalog.reduce((acc, c) => acc + c.medicines.length, 0)} items found`}
               </span>
-              {(selectedCategory || searchQuery) && (
+              {(selectedCategory || selectedSubCategory || searchQuery) && (
                 <button
                   onClick={() => {
                     setSelectedCategory(null);
+                    setSelectedSubCategory(null);
                     setSearchQuery('');
                   }}
                   className="text-xs text-emerald-600 hover:text-emerald-700 font-extrabold hover:underline"
@@ -207,7 +247,25 @@ export default function App() {
           </div>
 
           {/* Medicines Catalog Rendering */}
-          {filteredCatalog.length === 0 ? (
+          {isLoadingCatalog ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center space-y-4 bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
+              <Loader2 className="w-10 h-10 text-emerald-500 animate-spin" />
+              <h3 className="text-slate-800 font-bold font-heading text-lg">Loading Catalog...</h3>
+              <p className="text-xs text-slate-500 max-w-sm mx-auto">Syncing latest products and prices from Google Sheets.</p>
+            </div>
+          ) : catalogError ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center space-y-4 bg-white border border-red-200 rounded-3xl p-8 shadow-sm">
+              <div className="w-16 h-16 bg-red-50 text-red-400 rounded-full flex items-center justify-center">
+                <Activity size={24} />
+              </div>
+              <div>
+                <h3 className="text-slate-800 font-bold font-heading text-lg">Failed to load catalog</h3>
+                <p className="text-xs text-red-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                  {catalogError}
+                </p>
+              </div>
+            </div>
+          ) : filteredCatalog.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-center space-y-4 bg-white border border-slate-200 rounded-3xl p-8 shadow-sm">
               <div className="w-16 h-16 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center">
                 <Pill size={24} />
@@ -221,30 +279,66 @@ export default function App() {
             </div>
           ) : (
             <div className="space-y-10">
-              {filteredCatalog.map((category) => (
-                <div key={category.categoryId} className="space-y-4">
-                  {/* Category Header */}
-                  <div className="flex items-center gap-2 text-emerald-800 font-extrabold font-heading text-lg">
-                    <Activity size={18} className="text-emerald-600 shrink-0" />
-                    <h3>{category.categoryName}</h3>
-                  </div>
-
-                  {/* Medicines Grid */}
-                  <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
-                    {category.medicines.map((medicine) => (
-                      <MedicineCard
-                        key={medicine.medicineId}
-                        medicine={medicine}
-                        categoryName={category.categoryName}
-                        onAddToCart={handleAddToCart}
-                        cart={cart}
-                        searchQuery={searchQuery}
-                        onCardClick={() => openModalWithHistory('medicine', { medicine, categoryName: category.categoryName })}
+              {filteredCatalog.map((category) => {
+                if (category.isGroup) {
+                  if (!searchQuery && !selectedSubCategory) {
+                    return (
+                      <CategoryMiniCards 
+                        key={category.categoryId}
+                        categories={category.subCategories}
+                        onSelectCategory={setSelectedSubCategory}
                       />
-                    ))}
+                    );
+                  }
+
+                  return category.subCategories.map(sub => (
+                    <div key={sub.categoryId} className="space-y-4 mt-6">
+                      <div className="flex items-center gap-2 text-emerald-800 font-extrabold font-heading text-lg">
+                        <Activity size={18} className="text-emerald-600 shrink-0" />
+                        <h3>{sub.categoryName}</h3>
+                      </div>
+                      <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
+                        {sub.medicines.map((medicine) => (
+                          <MedicineCard
+                            key={medicine.medicineId}
+                            medicine={medicine}
+                            categoryName={sub.categoryName}
+                            onAddToCart={handleAddToCart}
+                            cart={cart}
+                            searchQuery={searchQuery}
+                            onCardClick={() => openModalWithHistory('medicine', { medicine, categoryName: sub.categoryName })}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ));
+                }
+
+                return (
+                  <div key={category.categoryId} className="space-y-4">
+                    {/* Category Header */}
+                    <div className="flex items-center gap-2 text-emerald-800 font-extrabold font-heading text-lg">
+                      <Activity size={18} className="text-emerald-600 shrink-0" />
+                      <h3>{category.categoryName}</h3>
+                    </div>
+
+                    {/* Medicines Grid */}
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
+                      {category.medicines.map((medicine) => (
+                        <MedicineCard
+                          key={medicine.medicineId}
+                          medicine={medicine}
+                          categoryName={category.categoryName}
+                          onAddToCart={handleAddToCart}
+                          cart={cart}
+                          searchQuery={searchQuery}
+                          onCardClick={() => openModalWithHistory('medicine', { medicine, categoryName: category.categoryName })}
+                        />
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>
@@ -260,7 +354,7 @@ export default function App() {
                   +
                 </div>
                 <span className="text-lg font-black font-heading text-white">
-                  Pharma<span className="text-emerald-400">Direct</span>
+                  Hafiz<span className="text-emerald-400">+</span>Pharmacy
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-medium leading-relaxed max-w-sm">
@@ -341,6 +435,8 @@ export default function App() {
         cart={cart}
         onAddToCart={handleAddToCart}
       />
+
+      <PwaInstallButton />
     </div>
   );
 }
