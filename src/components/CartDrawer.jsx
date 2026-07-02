@@ -87,32 +87,16 @@ export default function CartDrawer({
       const branch = configData.branches.find(b => b.branchId === selectedBranchId);
       if (!branch) return;
       
-      try {
-        const url = `https://router.project-osrm.org/route/v1/driving/${userLocation.lng},${userLocation.lat};${branch.coordinates.lng},${branch.coordinates.lat}?overview=false`;
-        const response = await fetch(url);
-        const data = await response.json();
-        
-        if (data.routes && data.routes.length > 0) {
-          const distanceMeters = data.routes[0].distance;
-          const distanceKm = distanceMeters / 1000;
-          const pricePerKm = configData.appConfig.delivery.pricePerKm;
-          setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
-          setLocationStatus('success');
-          return; // Exit early if API succeeds
-        }
-      } catch (error) {
-        console.error("Routing error:", error);
-      }
-      
-      // Fallback to straight line (Haversine) without extra multiplier
-      const R = 6371; // km
+      // Calculate straight-line GPS distance between device location and branch
+      const R = 6371; // Earth's radius in km
       const dLat = (branch.coordinates.lat - userLocation.lat) * Math.PI / 180;
       const dLon = (branch.coordinates.lng - userLocation.lng) * Math.PI / 180;
       const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
                 Math.cos(userLocation.lat * Math.PI / 180) * Math.cos(branch.coordinates.lat * Math.PI / 180) *
                 Math.sin(dLon/2) * Math.sin(dLon/2);
       const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      const distanceKm = R * c; // Removed the * 1.3 penalty
+      const distanceKm = R * c; 
+      
       const pricePerKm = configData.appConfig.delivery.pricePerKm;
       setDynamicDeliveryFee(Math.ceil(distanceKm * pricePerKm));
       setLocationStatus('success');
