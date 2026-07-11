@@ -55,6 +55,8 @@ html, body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.4);
+  transform: translateZ(0); /* Prevent mobile smearing */
+  -webkit-transform: translateZ(0);
 }
 
 .glass-panel-dark {
@@ -62,6 +64,8 @@ html, body {
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border: 1px solid rgba(255, 255, 255, 0.08);
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
 }
 
 .text-gradient {
@@ -76,9 +80,13 @@ html, body {
 
 .hover-lift {
   transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  transform: translateZ(0); /* Fix mobile scrolling tearing */
+  -webkit-transform: translateZ(0);
+  will-change: transform;
 }
 .hover-lift:hover {
-  transform: translateY(-4px);
+  transform: translateY(-4px) translateZ(0);
+  -webkit-transform: translateY(-4px) translateZ(0);
   box-shadow: 0 12px 20px -8px rgba(16, 185, 129, 0.15);
 }
 
